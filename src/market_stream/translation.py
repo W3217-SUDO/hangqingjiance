@@ -1,3 +1,4 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import json
@@ -100,4 +101,4 @@ def translate_text_to_chinese(text: str) -> str:
     except Exception:
         pass
 
-    return _apply_term_overrides(cleaned)
+    return cleaned

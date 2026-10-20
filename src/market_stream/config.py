@@ -1,3 +1,4 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import os
@@ -652,7 +653,21 @@ MARKET_SYMBOLS: tuple[str, ...] = (
 )
 
 
-POLL_INTERVAL_SECONDS = int(os.getenv("MARKET_STREAM_POLL_INTERVAL_SECONDS", "20"))
+# Modified 2026-10-20: curated hedge-trader sources; original catalog retained above.
+SOURCES = [s for s in SOURCES if s.name in {
+    "BBC World", "BBC Business", "CNBC World", "CNBC Economy",
+    "Federal Reserve Press Releases", "Federal Reserve Speeches and Testimony",
+    "EIA Today in Energy", "ECB Press", "CoinDesk Markets", "Cointelegraph",
+    "The Guardian World",
+}] + [
+    Source("BLS Latest", "macro", "https://www.bls.gov/feed/bls_latest.rss", "https://www.bls.gov/", "us"),
+    Source("金十快讯", "flash", "https://www.jin10.com/flash_newest.js", "https://www.jin10.com/", "global", "json", "jin10"),
+    Source("华尔街见闻", "flash", "https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&limit=30", "https://wallstreetcn.com/", "global", "json", "wallstreetcn"),
+    Source("MKTNews", "flash", "https://api.mktnews.net/api/flash?type=0&limit=50", "https://mktnews.net/", "global", "json", "mktnews"),
+]
+MARKET_KEYWORDS = (*MARKET_KEYWORDS, "比特币", "以太坊", "原油", "美联储", "利率", "通胀", "关税", "伊朗", "非农")
+
+POLL_INTERVAL_SECONDS = max(5, int(os.getenv("MARKET_STREAM_POLL_INTERVAL_SECONDS", "5")))
 MAX_ITEMS = int(os.getenv("MARKET_STREAM_MAX_ITEMS", "250"))
 DB_PATH = os.getenv("MARKET_STREAM_DB_PATH", "data/market_stream.db")
 MAX_STORED_ITEMS = int(os.getenv("MARKET_STREAM_MAX_STORED_ITEMS", "100000"))

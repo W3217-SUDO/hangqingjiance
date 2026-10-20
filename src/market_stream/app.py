@@ -1,3 +1,4 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import asyncio
@@ -215,7 +216,7 @@ async def logout() -> RedirectResponse:
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/original", response_class=HTMLResponse)
 async def home() -> str:
     return """
 <!DOCTYPE html>
@@ -2061,3 +2062,8 @@ async def get_text(
 @app.get("/stream")
 async def stream(lang: str = "en") -> StreamingResponse:
     return StreamingResponse(service.stream(lang=lang), media_type="text/event-stream")
+
+
+# Modified 2026-10-20: Crossmarket Pulse routes; original upstream UI at /original.
+from .hedge import create_router
+app.include_router(create_router(service))

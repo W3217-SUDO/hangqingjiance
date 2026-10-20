@@ -1,3 +1,4 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import asyncio
@@ -543,21 +544,31 @@ class NewsStreamService:
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
     async def stream(self, lang: str = "en") -> AsyncIterator[str]:
+        from .hedge import decorate, relevant
         sent_ids: set[str] = set()
         backlog = self.localized_items(self.recent_items(limit=30), lang=lang)
         for item in reversed(backlog):
+            if not relevant(item): continue
             sent_ids.add(item.item_id)
-            yield self._format_sse("item", item.as_dict(lang))
+            yield self._format_sse("item", decorate(item))
 
         while True:
             async with self._condition:
-                await self._condition.wait()
+                try:
+                    await asyncio.wait_for(self._condition.wait(), timeout=15)
+                except asyncio.TimeoutError:
+                    pass
+
+            yield ": heartbeat\n\n"
+            if len(sent_ids) > 3000:
+                sent_ids = {item.item_id for item in self.recent_items(limit=300)}
 
             for item in reversed(self.localized_items(self.recent_items(limit=30), lang=lang)):
+                if not relevant(item): continue
                 if item.item_id in sent_ids:
                     continue
                 sent_ids.add(item.item_id)
-                yield self._format_sse("item", item.as_dict(lang))
+                yield self._format_sse("item", decorate(item))
 
     @staticmethod
     def _format_sse(event: str, payload: dict[str, object]) -> str:
@@ -599,7 +610,7 @@ class NewsStreamService:
         text = title.lower()
         text = text.replace("'s", " ")
         text = re.sub(r"&", " and ", text)
-        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        text = re.sub(r"[^a-z0-9\u3400-\u9fff\s]", " ", text)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 

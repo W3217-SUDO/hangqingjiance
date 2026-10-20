@@ -1,6 +1,9 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
+from typing import Iterator
 from json import dumps, loads
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,10 +23,15 @@ class SQLiteStore:
         self._classification_service = ClassificationService()
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         connection = sqlite3.connect(self.db_path)
         connection.row_factory = sqlite3.Row
-        return connection
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
 
     def _init_db(self) -> None:
         with self._connect() as connection:
@@ -89,7 +97,7 @@ class SQLiteStore:
                 item.source_region,
                 item.title,
                 item.summary,
-                item.title_zh or self._translate_if_needed(item.title),
+                item.title_zh,
                 item.summary_zh,
                 item.url,
                 item.source_homepage,

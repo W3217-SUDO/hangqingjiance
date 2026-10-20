@@ -1,4 +1,24 @@
-# Global Market Newsboard
+# 全球脉冲 · Crossmarket Pulse
+
+面向 **US30 / US500 / BTC / ETH / XBR / XTI** 的全球新闻监控台，基于 Global Market Newsboard 和 NewsNow 适配改造。
+
+- 当前版本：**1.0.0**；发布分支：`main`；版本标签从 `1.0.0` 开始，每次发布同时打标签。
+- 免费中文快讯、全球官方与媒体 RSS，SSE 到屏，SQLite 历史记录。
+- 品种与重要性筛选、关键词搜索、收藏、来源健康状态。
+- 1 / 3 / 5 分钟中文主题整理；付费数据升级入口已预留，尚未接入。
+- 免费快讯约 20 秒采集，RSS 约 60 秒，源端发布延迟不保证。
+
+**[完整中文使用与启动说明](README.zh-CN.md)** · **[版本记录](CHANGELOG.md)**
+
+Windows 启动：`./start.ps1`，然后访问 `http://127.0.0.1:8010`。首次安装步骤见中文说明。
+
+![监控台预览](preview.jpg)
+
+以下保留原始上游说明。其中上游网站地址及原项目配置不代表本项目的在线部署地址。本文已于 2026-10-20 修改。
+
+---
+
+# Global Market Newsboard（上游原始说明）
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688)

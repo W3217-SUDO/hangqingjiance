@@ -1,8 +1,10 @@
+# Modified 2026-10-20 for Crossmarket Pulse; see README.zh-CN.md.
 from __future__ import annotations
 
 import asyncio
 import html
 import re
+import time as monotime
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin
@@ -87,7 +89,7 @@ def parse_datetime(entry: dict, source: Source | None = None) -> datetime:
             return parsed.astimezone(timezone.utc)
         except (TypeError, ValueError, IndexError):
             continue
-    return datetime.now(timezone.utc)
+    return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 def parse_iso_datetime(raw: str) -> datetime:
@@ -116,8 +118,11 @@ def should_keep_sec_filing(source: Source, title: str, summary: str) -> bool:
 
 
 async def fetch_source(client: httpx.AsyncClient, source: Source) -> list[StreamItem]:
-    response = await client.get(source.feed_url, follow_redirects=True, timeout=20.0)
+    response = await client.get(source.feed_url, follow_redirects=True, timeout=9.0)
     response.raise_for_status()
+    if source.kind == "json":
+        from .chinese_sources import parse_json_source
+        return parse_json_source(source, response.text)
     if source.kind == "html":
         return parse_html_source(source, response.text)
     parsed = feedparser.parse(response.text)
@@ -130,7 +135,7 @@ async def fetch_source(client: httpx.AsyncClient, source: Source) -> list[Stream
         if not should_keep_sec_filing(source, title, summary):
             continue
         matched_terms = match_terms(title, summary)
-        if not matched_terms:
+        if not matched_terms and source.category not in {"policy", "macro", "energy", "crypto"}:
             continue
 
         items.append(
@@ -219,7 +224,7 @@ async def fetch_all_sources(sources: list[Source]) -> tuple[list[StreamItem], li
         "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
     }
     async with httpx.AsyncClient(headers=headers) as client:
-        tasks = [fetch_source(client, source) for source in sources]
+        tasks = [fetch_tracked(client, source) for source in sources]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
     items: list[StreamItem] = []
@@ -230,3 +235,26 @@ async def fetch_all_sources(sources: list[Source]) -> tuple[list[StreamItem], li
             continue
         items.extend(result)
     return items, errors
+
+
+# Modified 2026-10-20: source-specific intervals and health, independent of SSE.
+SOURCE_HEALTH: dict[str, dict] = {}
+NEXT_FETCH: dict[str, float] = {}
+
+
+async def fetch_tracked(client: httpx.AsyncClient, source: Source) -> list[StreamItem]:
+    now = monotime.monotonic()
+    if now < NEXT_FETCH.get(source.name, 0):
+        return []
+    interval = 20 if source.kind == "json" else 60
+    NEXT_FETCH[source.name] = now + interval
+    state = SOURCE_HEALTH.setdefault(source.name, {})
+    state.update(checked_at=datetime.now(timezone.utc).isoformat(), interval_seconds=interval)
+    try:
+        items = await fetch_source(client, source)
+        state.update(state="ok", count=len(items), last_success=datetime.now(timezone.utc).isoformat(), error=None)
+        state["latest_publication"] = max((i.published_at.isoformat() for i in items), default=None)
+        return items
+    except Exception as exc:
+        state.update(state="error", error=str(exc) or type(exc).__name__)
+        raise
