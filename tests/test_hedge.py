@@ -39,7 +39,7 @@ class HedgeTests(unittest.TestCase):
             return StreamItem('test','flash','global',title,'','https://example.org','https://example.org',datetime.now(timezone.utc))
         self.assertEqual(set(decorate(make('OPEC agrees oil production cut'))['assets']), {'XBR','XTI'})
         self.assertEqual(decorate(make('Bitcoin ETF inflows rise'))['assets'], ['BTC'])
-        self.assertEqual(decorate(make('苹果投入1亿美元收购公司'))['assets'], ['US30','US500'])
+        self.assertEqual(decorate(make('苹果投入1亿美元收购公司'))['assets'], [])
         self.assertIn('BTC', decorate(make('US private payrolls rise'))['assets'])
 
     def test_storage_does_not_translate_during_ingestion(self):

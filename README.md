@@ -2,10 +2,11 @@
 
 面向 **US30 / US500 / BTC / ETH / XBR / XTI** 的全球新闻监控台，基于 Global Market Newsboard 和 NewsNow 适配改造。
 
-- 当前版本：**1.0.1**；发布分支：`main`；版本标签从 `1.0.0` 开始，每次发布同时打标签。
-- 默认 23 个免费海外媒体 / 官方订阅：CNBC、WSJ Markets、Financial Times、MarketWatch、BBC、Oilprice、CoinDesk、Cointelegraph、Decrypt、美联储、BLS、EIA 等。
+- 当前版本：**1.0.2**；发布分支：`main`；版本标签从 `1.0.0` 开始，每次发布同时打标签。
+- 默认 32 个免费海外媒体 / 官方订阅（同一媒体可有多个专题）：CNBC、WSJ Markets / Business、FT / FT Markets、MarketWatch、BBC、Oilprice、CoinDesk、Cointelegraph、Decrypt、Blockworks、Bitcoin Magazine、美联储、BLS、EIA 等。
 - Reuters / Bloomberg 使用明确标识的 Google News 标题索引，非官方直连推送；全文可能需要媒体订阅。
 - 品种与重要性筛选、关键词搜索、收藏、来源健康状态。
+- 默认严格相关性筛选、逐品种关联依据、紧凑布局及原文显示开关。规则分用于筛选潜在催化，不代表价格影响或概率。
 - 1 / 3 / 5 分钟中文主题整理；付费数据升级入口已预留，尚未接入。
 - 海外 RSS 约 60 秒检查一次，采集后 SSE 到屏，SQLite 存储历史；源端发布及搜索索引延迟不保证。
 

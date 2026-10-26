@@ -546,11 +546,11 @@ class NewsStreamService:
     async def stream(self, lang: str = "en") -> AsyncIterator[str]:
         from .hedge import decorate, relevant
         sent_ids: set[str] = set()
-        backlog = self.localized_items(self.recent_items(limit=30), lang=lang)
+        backlog = self.localized_items(self.recent_items(limit=100), lang=lang)
         for item in reversed(backlog):
             if not relevant(item): continue
             sent_ids.add(item.item_id)
-            yield self._format_sse("item", decorate(item))
+            yield self._format_sse("item", decorate(item, mode="related"))
 
         while True:
             async with self._condition:
@@ -563,12 +563,12 @@ class NewsStreamService:
             if len(sent_ids) > 3000:
                 sent_ids = {item.item_id for item in self.recent_items(limit=300)}
 
-            for item in reversed(self.localized_items(self.recent_items(limit=30), lang=lang)):
+            for item in reversed(self.localized_items(self.recent_items(limit=100), lang=lang)):
                 if not relevant(item): continue
                 if item.item_id in sent_ids:
                     continue
                 sent_ids.add(item.item_id)
-                yield self._format_sse("item", decorate(item))
+                yield self._format_sse("item", decorate(item, mode="related"))
 
     @staticmethod
     def _format_sse(event: str, payload: dict[str, object]) -> str:

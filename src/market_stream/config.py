@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 
 @dataclass(frozen=True)
@@ -670,6 +671,22 @@ SOURCES = [s for s in SOURCES if s.name in {
     Source("Oilprice", "energy", "https://oilprice.com/rss/main", "https://oilprice.com/"),
     Source("BEA Economic Releases", "macro", "https://apps.bea.gov/rss/rss.xml", "https://www.bea.gov/", "us"),
 ]
+# Additional focused feeds, verified 2026-10-25. Topic indexes use publisher metadata checks.
+SOURCES += [
+    Source("FT Markets", "markets", "https://www.ft.com/markets?format=rss", "https://www.ft.com/"),
+    Source("WSJ Business", "business", "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness", "https://www.wsj.com/"),
+    Source("Blockworks", "crypto", "https://blockworks.co/feed", "https://blockworks.co/"),
+    Source("Bitcoin Magazine", "crypto", "https://bitcoinmagazine.com/.rss/full/", "https://bitcoinmagazine.com/"),
+]
+for label, domain, query, category in [
+    ("Reuters 原油专题 · Google News 索引", "reuters.com", "(Brent OR WTI OR OPEC OR \"crude oil\")", "energy"),
+    ("Reuters 宏观专题 · Google News 索引", "reuters.com", "(\"Federal Reserve\" OR CPI OR payrolls OR Treasury)", "macro"),
+    ("Reuters BTC/ETH 专题 · Google News 索引", "reuters.com", "(bitcoin OR ethereum OR \"crypto ETF\")", "crypto"),
+    ("Bloomberg 原油专题 · Google News 索引", "bloomberg.com", "(Brent OR WTI OR OPEC OR \"crude oil\")", "energy"),
+    ("AP Business · Google News 索引", "apnews.com", "(\"stock market\" OR \"Federal Reserve\" OR inflation OR oil)", "business"),
+]:
+    url = "https://news.google.com/rss/search?" + urlencode({"q":"site:"+domain+" "+query,"hl":"en-US","gl":"US","ceid":"US:en"})
+    SOURCES.append(Source(label,category,url,"https://www."+domain+"/",via="google_news",publisher_domain=domain))
 ACTIVE_SOURCE_NAMES = frozenset(s.name for s in SOURCES)
 MARKET_KEYWORDS = (*MARKET_KEYWORDS, "比特币", "以太坊", "原油", "美联储", "利率", "通胀", "关税", "伊朗", "非农")
 

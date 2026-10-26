@@ -4,11 +4,13 @@ import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from .config import SOURCES, ACTIVE_SOURCE_NAMES
 from .fetcher import SOURCE_HEALTH
+from .relevance import analyze, select_assets
 from .translation import translate_text_to_chinese, contains_cjk
 
 ASSETS = ["US30", "US500", "BTC", "ETH", "XBR", "XTI"]
@@ -17,14 +19,7 @@ TRANSLATIONS = asyncio.Semaphore(3)
 
 
 def relevant(item):
-    if item.source_name not in ACTIVE_SOURCE_NAMES:
-        return False
-    title = item.title.lower()
-    if re.search(r"技术刘|期货热图|会员专享|点击订阅|限时优惠|开户返|广告推广", title):
-        return False
-    personal = re.search(r"\b(tennis|football|soccer|golf|singer|celebrity|monfils)\b|网球|足球|婚姻|离婚|分居|球星", title)
-    financial = re.search(r"\b(oil|crude|inflation|interest rate|earnings|revenue|billion|stock|bitcoin)\b|原油|通胀|财报|营收|股价|比特币", title)
-    return not personal or bool(financial)
+    return item.source_name in ACTIVE_SOURCE_NAMES and bool(select_assets(analyze(item.title, item.source_name), "related"))
 
 
 def event_key(item):
@@ -40,37 +35,19 @@ def event_key(item):
     return item["id"]
 
 
-def decorate(item):
+def decorate(item, mode="strict", asset="all"):
     d = item.as_dict("en")
-    title = item.title.lower()
-    assets = set()
-    topic, reason = "全球动态", "持续关注事件进展与原始披露。"
-    macro = re.search(r"\b(fed|fomc|powell|cpi|ppi|inflation|payrolls?|employment|interest rates?|gdp|treasury|dollar|yields?|tariffs?)\b|美联储|鲍威尔|通胀|利率|非农|就业|关税|美债|美元指数|美元流动性|央行", title)
-    energy = re.search(r"\b(oil|crude|brent|wti|opec|petroleum|hormuz)\b|原油|石油|布伦特|欧佩克|霍尔木兹|油价|减产", title)
-    crypto = re.search(r"\b(crypto|bitcoin|btc|ethereum|ether|eth|stablecoin|blockchain)\b|比特币|以太|加密|稳定币|区块链", title) or item.source_name in {"CoinDesk Markets", "Cointelegraph", "Decrypt"}
-    geo = re.search(r"\b(war|missile|attack|sanction|iran|russia|ukraine|israel|ceasefire)\b|战争|导弹|袭击|制裁|伊朗|俄罗斯|乌克兰|以色列|停火", title)
-    if crypto:
-        if re.search(r"\b(bitcoin|btc)\b|比特币", title): assets.add("BTC")
-        if re.search(r"\b(ethereum|ether|eth)\b|以太", title): assets.add("ETH")
-        if not assets: assets.update(["BTC", "ETH"])
-        topic, reason = "加密市场", "关注监管披露、ETF 资金流、交易所与链上事件。"
-    if macro or item.source_category in {"macro", "policy"}:
-        assets.update(["US30", "US500", "BTC", "ETH"])
-        topic, reason = "宏观政策", "关注利率、美元流动性与风险资产联动；须核对数据原值与预期。"
-    if energy or item.source_category == "energy":
-        assets.update(["XBR", "XTI"])
-        topic, reason = "能源供需", "关注原油产量、库存、需求与运输；XBR / XTI 分别对应布伦特 / WTI。"
-    if geo:
-        assets.update(["US30", "US500", "XBR", "XTI"])
-        topic, reason = "地缘与贸易", "关注事件后续及能源供应、运输和风险偏好的关联。"
-    if not assets and item.source_category != "world":
-        # Broad market news is a candidate for the index watchlist, not a price forecast.
-        assets.update(["US30", "US500"])
-    official = urlparse(item.source_homepage).hostname in {"www.federalreserve.gov", "www.bls.gov", "www.eia.gov", "www.ecb.europa.eu", "www.bea.gov"}
+    analysis = analyze(item.title, item.source_name)
+    assets = select_assets(analysis, mode, asset)
+    lead = max(assets, key=lambda a:analysis["asset_scores"][a], default=None)
     source = next((s for s in SOURCES if s.name == item.source_name), None)
-    high = bool(re.search(r"\b(fomc|cpi|nonfarm|opec|hormuz|war|rate cut|rate hike|etf|hack|exploit|emergency)\b|利率决议|非农|通胀|降息|加息|减产|战争|袭击|霍尔木兹|被盗|紧急", title)) or "source_important" in item.matched_terms
-    d.update(assets=[a for a in ASSETS if a in assets], topic=topic, reason=reason, official=official, attention="high" if high else "normal", timestamp_known=item.published_at.year > 1970)
-    d.update(via=source.via if source else "unknown", link_label="查看 Google News 索引，跳转媒体文章" if source and source.via == "google_news" else "打开媒体来源")
+    official = urlparse(item.source_homepage).hostname in {"www.federalreserve.gov", "www.bls.gov", "www.eia.gov", "www.ecb.europa.eu", "www.bea.gov"}
+    score = analysis["asset_scores"].get(lead, 0)
+    d.update(assets=assets, asset_scores=analysis["asset_scores"], asset_reasons=analysis["asset_reasons"],
+             asset_evidence=analysis["asset_evidence"], relevance_score=score,
+             topic=analysis["topics"].get(lead,"弱关联"), reason=analysis["asset_reasons"].get(lead,analysis["rejection"]),
+             official=official, attention="high" if score>=85 else "normal", timestamp_known=item.published_at.year>1970,
+             via=source.via if source else "unknown", link_label="查看 Google News 索引，跳转媒体文章" if source and source.via=="google_news" else "打开媒体来源")
     return d
 
 
@@ -88,19 +65,22 @@ def create_router(service):
         return FileResponse(STATIC / name)
 
     @router.get("/api/hedge/snapshot")
-    async def snapshot(q: str = Query("", max_length=150), days: int = Query(3, ge=1, le=30), asset: str = "all"):
+    async def snapshot(q: str = Query("", max_length=150), days: int = Query(3, ge=1, le=30), asset: str = "all", mode: Literal["strict", "related"] = "strict"):
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        rows = service.search_items(q, limit=600, start_at=cutoff) if q.strip() else service.history_items(limit=600, start_at=cutoff)
+        rows = service.search_items(q, limit=2400, start_at=cutoff) if q.strip() else service.history_items(limit=2400, start_at=cutoff)
         # Use upstream deduplication for the working set as well as live ingestion.
         selected, signatures = [], []
+        weak_count = 0
         for row in rows:
+            d = decorate(row, mode, asset)
+            if not d["assets"]:
+                weak_count += 1
+                continue
             if not relevant(row): continue
             if service._is_duplicate_signature(row.published_at, row.title, signatures): continue
             signatures.append((row.published_at, service._normalized_title(row.title), service._title_tokens(row.title)))
-            d = decorate(row)
-            if asset != "all" and asset not in d["assets"]: continue
             selected.append(d)
-        return {"items": selected, "generated_at": datetime.now(timezone.utc).isoformat(), "health": service.health_status(), "sources": source_status(), "limit":600}
+        return {"items": selected[:1000], "filter": {"mode":mode,"scanned":len(rows),"weak_hidden":weak_count,"matched":len(selected),"note":"规则相关性分，不代表价格影响或概率"}, "generated_at": datetime.now(timezone.utc).isoformat(), "health": service.health_status(), "sources": source_status(), "limit":1000}
 
     def source_status():
         return [{"name":s.name, "url":s.feed_url, "homepage":s.homepage, "via":s.via, "access_note":"Google News 收录的公开标题，非媒体官方推送；索引和跳转可能延迟，全文可能需订阅。" if s.via == "google_news" else "媒体 / 官方公开 RSS 标题，全文访问遵循来源网站要求。", "kind":s.kind, "category":s.category, "state":"pending", "interval_seconds":20 if s.kind=="json" else 60, **SOURCE_HEALTH.get(s.name,{})} for s in SOURCES]
@@ -110,25 +90,30 @@ def create_router(service):
         return {"sources":source_status()}
 
     @router.get("/api/hedge/brief")
-    async def brief(asset: str = "all", publisher: str = "all"):
-        rows = service.recent_items(limit=500)
+    async def brief(asset: str = "all", publisher: str = "all", mode: Literal["strict", "related"] = "strict"):
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
-        current = [decorate(r) for r in rows if r.published_at >= cutoff and relevant(r)]
+        rows = service.history_items(limit=2400, start_at=cutoff)
+        current = [decorate(r, mode, asset) for r in rows if relevant(r)]
+        current = [r for r in current if r["assets"]]
         if asset != "all": current = [r for r in current if asset in r["assets"]]
         if publisher != "all": current = [r for r in current if r["source_name"] == publisher]
         groups = []
-        for topic in ["宏观政策", "地缘与贸易", "加密市场", "能源供需", "全球动态"]:
+        for topic in ["宏观政策", "美股指数", "地缘与贸易", "加密市场", "能源供需"]:
             matched = [r for r in current if r["topic"] == topic]
             matched.sort(key=lambda r:(r["attention"]=="high",r["published_at"]), reverse=True)
-            selected, keys = [], set()
+            selected, keys, signatures, publisher_counts = [], set(), [], {}
             for item in matched:
                 key = event_key(item)
-                if key in keys: continue
+                if key in keys or (publisher=="all" and publisher_counts.get(item["source_name"],0)>=3): continue
+                stamp=datetime.fromisoformat(item["published_at"])
+                if service._is_duplicate_signature(stamp,item["title_original"],signatures): continue
+                signatures.append((stamp,service._normalized_title(item["title_original"]),service._title_tokens(item["title_original"])))
                 keys.add(key)
+                publisher_counts[item["source_name"]]=publisher_counts.get(item["source_name"],0)+1
                 selected.append(item)
-                if len(selected) == 3: break
+                if len(selected) == 8: break
             if selected: groups.append({"topic":topic,"count":len(matched),"items":selected,"note":selected[0]["reason"]})
-        return {"generated_at":datetime.now(timezone.utc).isoformat(),"window_hours":24,"count":len(current),"groups":groups,"method":"规则归类 + 原标题 / 机器翻译，不生成未经来源支持的事实"}
+        return {"generated_at":datetime.now(timezone.utc).isoformat(),"window_hours":24,"mode":mode,"count":len(current),"groups":groups,"method":"规则归类 + 原标题 / 机器翻译，不生成未经来源支持的事实"}
 
     @router.get("/api/hedge/translate/{item_id}")
     async def translate(item_id: str):
