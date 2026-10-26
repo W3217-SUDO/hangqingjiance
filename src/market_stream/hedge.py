@@ -7,7 +7,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
-from .config import SOURCES
+from .config import SOURCES, ACTIVE_SOURCE_NAMES
 from .fetcher import SOURCE_HEALTH
 from .translation import translate_text_to_chinese, contains_cjk
 
@@ -17,6 +17,8 @@ TRANSLATIONS = asyncio.Semaphore(3)
 
 
 def relevant(item):
+    if item.source_name not in ACTIVE_SOURCE_NAMES:
+        return False
     title = item.title.lower()
     if re.search(r"技术刘|期货热图|会员专享|点击订阅|限时优惠|开户返|广告推广", title):
         return False
@@ -45,7 +47,7 @@ def decorate(item):
     topic, reason = "全球动态", "持续关注事件进展与原始披露。"
     macro = re.search(r"\b(fed|fomc|powell|cpi|ppi|inflation|payrolls?|employment|interest rates?|gdp|treasury|dollar|yields?|tariffs?)\b|美联储|鲍威尔|通胀|利率|非农|就业|关税|美债|美元指数|美元流动性|央行", title)
     energy = re.search(r"\b(oil|crude|brent|wti|opec|petroleum|hormuz)\b|原油|石油|布伦特|欧佩克|霍尔木兹|油价|减产", title)
-    crypto = re.search(r"\b(crypto|bitcoin|btc|ethereum|ether|eth|stablecoin|blockchain)\b|比特币|以太|加密|稳定币|区块链", title) or item.source_name in {"CoinDesk Markets", "Cointelegraph"}
+    crypto = re.search(r"\b(crypto|bitcoin|btc|ethereum|ether|eth|stablecoin|blockchain)\b|比特币|以太|加密|稳定币|区块链", title) or item.source_name in {"CoinDesk Markets", "Cointelegraph", "Decrypt"}
     geo = re.search(r"\b(war|missile|attack|sanction|iran|russia|ukraine|israel|ceasefire)\b|战争|导弹|袭击|制裁|伊朗|俄罗斯|乌克兰|以色列|停火", title)
     if crypto:
         if re.search(r"\b(bitcoin|btc)\b|比特币", title): assets.add("BTC")
@@ -64,9 +66,11 @@ def decorate(item):
     if not assets and item.source_category != "world":
         # Broad market news is a candidate for the index watchlist, not a price forecast.
         assets.update(["US30", "US500"])
-    official = urlparse(item.source_homepage).hostname in {"www.federalreserve.gov", "www.bls.gov", "www.eia.gov", "www.ecb.europa.eu"}
+    official = urlparse(item.source_homepage).hostname in {"www.federalreserve.gov", "www.bls.gov", "www.eia.gov", "www.ecb.europa.eu", "www.bea.gov"}
+    source = next((s for s in SOURCES if s.name == item.source_name), None)
     high = bool(re.search(r"\b(fomc|cpi|nonfarm|opec|hormuz|war|rate cut|rate hike|etf|hack|exploit|emergency)\b|利率决议|非农|通胀|降息|加息|减产|战争|袭击|霍尔木兹|被盗|紧急", title)) or "source_important" in item.matched_terms
     d.update(assets=[a for a in ASSETS if a in assets], topic=topic, reason=reason, official=official, attention="high" if high else "normal", timestamp_known=item.published_at.year > 1970)
+    d.update(via=source.via if source else "unknown", link_label="查看 Google News 索引，跳转媒体文章" if source and source.via == "google_news" else "打开媒体来源")
     return d
 
 
@@ -99,18 +103,19 @@ def create_router(service):
         return {"items": selected, "generated_at": datetime.now(timezone.utc).isoformat(), "health": service.health_status(), "sources": source_status(), "limit":600}
 
     def source_status():
-        return [{"name":s.name, "url":s.feed_url, "kind":s.kind, "category":s.category, "state":"pending", "interval_seconds":20 if s.kind=="json" else 60, **SOURCE_HEALTH.get(s.name,{})} for s in SOURCES]
+        return [{"name":s.name, "url":s.feed_url, "homepage":s.homepage, "via":s.via, "access_note":"Google News 收录的公开标题，非媒体官方推送；索引和跳转可能延迟，全文可能需订阅。" if s.via == "google_news" else "媒体 / 官方公开 RSS 标题，全文访问遵循来源网站要求。", "kind":s.kind, "category":s.category, "state":"pending", "interval_seconds":20 if s.kind=="json" else 60, **SOURCE_HEALTH.get(s.name,{})} for s in SOURCES]
 
     @router.get("/api/hedge/sources")
     async def sources():
         return {"sources":source_status()}
 
     @router.get("/api/hedge/brief")
-    async def brief(asset: str = "all"):
+    async def brief(asset: str = "all", publisher: str = "all"):
         rows = service.recent_items(limit=500)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
         current = [decorate(r) for r in rows if r.published_at >= cutoff and relevant(r)]
         if asset != "all": current = [r for r in current if asset in r["assets"]]
+        if publisher != "all": current = [r for r in current if r["source_name"] == publisher]
         groups = []
         for topic in ["宏观政策", "地缘与贸易", "加密市场", "能源供需", "全球动态"]:
             matched = [r for r in current if r["topic"] == topic]
@@ -128,8 +133,8 @@ def create_router(service):
     @router.get("/api/hedge/translate/{item_id}")
     async def translate(item_id: str):
         with service._store._connect() as connection:
-            row = connection.execute("SELECT title,title_zh FROM alerts WHERE id=?", (item_id,)).fetchone()
-        if not row: raise HTTPException(404)
+            row = connection.execute("SELECT title,title_zh,source_name FROM alerts WHERE id=?", (item_id,)).fetchone()
+        if not row or row["source_name"] not in ACTIVE_SOURCE_NAMES: raise HTTPException(404)
         title, translated = row["title"], row["title_zh"]
         if contains_cjk(title): return {"title":title,"status":"original_zh"}
         if translated and translated != title and contains_cjk(translated): return {"title":translated,"status":"translated"}

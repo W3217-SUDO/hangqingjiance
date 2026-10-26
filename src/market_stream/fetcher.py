@@ -7,7 +7,7 @@ import re
 import time as monotime
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from zoneinfo import ZoneInfo
 
 import feedparser
@@ -125,17 +125,24 @@ async def fetch_source(client: httpx.AsyncClient, source: Source) -> list[Stream
         return parse_json_source(source, response.text)
     if source.kind == "html":
         return parse_html_source(source, response.text)
-    parsed = feedparser.parse(response.text)
+    parsed = feedparser.parse(response.content)
+    if not parsed.entries:
+        raise ValueError("来源未返回可解析的 RSS / Atom 条目")
 
     items: list[StreamItem] = []
     for entry in parsed.entries:
+        if source.publisher_domain:
+            # A site: query alone is not publisher verification. Check Google's source metadata.
+            publisher = (urlparse(entry.get("source", {}).get("href", "")).hostname or "").lower()
+            if publisher != source.publisher_domain and not publisher.endswith("." + source.publisher_domain):
+                continue
         title = clean_text(entry.get("title"))
         summary = clean_text(entry.get("summary") or entry.get("description"))
         url = entry.get("link") or source.homepage
         if not should_keep_sec_filing(source, title, summary):
             continue
         matched_terms = match_terms(title, summary)
-        if not matched_terms and source.category not in {"policy", "macro", "energy", "crypto"}:
+        if not matched_terms and source.category not in {"policy", "macro", "energy", "crypto", "markets", "business"}:
             continue
 
         items.append(

@@ -1,5 +1,14 @@
 # 版本记录
 
+## 1.0.1 — 2026-10-25
+
+- 默认来源切换为 23 个海外财经媒体、加密媒体、能源媒体及官方订阅，停用金十、华尔街见闻和 MKTNews。
+- 新增 WSJ Markets、Financial Times、Oilprice、BEA，启用 MarketWatch、NPR、Decrypt 等海外来源。
+- Reuters 和 Bloomberg 使用 Google News 公开标题索引，逐条校验索引标注的媒体域名，并明确展示非官方推送及全文访问限制。
+- 新增按媒体筛选；新闻、搜索、SSE、中文整理和收藏显示仅使用当前启用来源。旧历史与收藏保留但隐藏。
+- RSS 改为按原始字节解析，保留媒体声明的字符编码。
+- 新增海外来源策略、历史过滤和索引媒体验证回归测试。
+
 ## 1.0.0 — 2026-10-20
 
 - 基于 Global Market Newsboard 构建面向 US30、US500、BTC、ETH、XBR、XTI 的全球新闻监控台。

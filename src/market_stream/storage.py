@@ -10,14 +10,15 @@ from pathlib import Path
 
 from .classifier import ClassificationResult
 from .classification_service import ClassificationService
-from .config import MAX_STORED_ITEMS, SEC_ALWAYS_KEEP_FORMS, SEC_EVENT_KEYWORDS
+from .config import MAX_STORED_ITEMS, SEC_ALWAYS_KEEP_FORMS, SEC_EVENT_KEYWORDS, ACTIVE_SOURCE_NAMES
 from .filing_filter import is_top_100_market_cap_filing
 from .models import StreamItem
 from .translation import contains_cjk, needs_chinese_translation, translate_text_to_chinese
 
 
 class SQLiteStore:
-    def __init__(self, db_path: str) -> None:
+    def __init__(self, db_path: str, source_names: set[str] | None = None) -> None:
+        self.source_names = tuple(sorted(ACTIVE_SOURCE_NAMES if source_names is None else source_names))
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._classification_service = ClassificationService()
@@ -139,6 +140,8 @@ class SQLiteStore:
             WHERE 1 = 1
         """
         params: list[object] = []
+        sql += " AND source_name IN (" + ",".join("?" for _ in self.source_names) + ")"
+        params.extend(self.source_names)
         if source_category:
             sql += " AND source_category = ?"
             params.append(source_category)
@@ -186,6 +189,8 @@ class SQLiteStore:
                 )
             """
             params: list[object] = [pattern, pattern, pattern, pattern, pattern, pattern]
+            sql += " AND source_name IN (" + ",".join("?" for _ in self.source_names) + ")"
+            params.extend(self.source_names)
             if source_category:
                 sql += " AND source_category = ?"
                 params.append(source_category)

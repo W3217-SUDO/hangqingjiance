@@ -14,6 +14,8 @@ class Source:
     region: str = "global"
     kind: str = "feed"
     parser: str = ""
+    via: str = "publisher_rss"
+    publisher_domain: str = ""
 
 
 SOURCES: list[Source] = [
@@ -653,18 +655,22 @@ MARKET_SYMBOLS: tuple[str, ...] = (
 )
 
 
-# Modified 2026-10-20: curated hedge-trader sources; original catalog retained above.
+# Modified 2026-10-25: overseas publishers and official releases only.
 SOURCES = [s for s in SOURCES if s.name in {
     "BBC World", "BBC Business", "CNBC World", "CNBC Economy",
     "Federal Reserve Press Releases", "Federal Reserve Speeches and Testimony",
-    "EIA Today in Energy", "ECB Press", "CoinDesk Markets", "Cointelegraph",
-    "The Guardian World",
+    "EIA Today in Energy", "EIA Press Releases", "ECB Press", "CoinDesk Markets", "Cointelegraph",
+    "The Guardian World", "The Guardian Business", "NPR Business", "Decrypt", "MarketWatch Top Stories",
 }] + [
     Source("BLS Latest", "macro", "https://www.bls.gov/feed/bls_latest.rss", "https://www.bls.gov/", "us"),
-    Source("金十快讯", "flash", "https://www.jin10.com/flash_newest.js", "https://www.jin10.com/", "global", "json", "jin10"),
-    Source("华尔街见闻", "flash", "https://api-one.wallstcn.com/apiv1/content/lives?channel=global-channel&limit=30", "https://wallstreetcn.com/", "global", "json", "wallstreetcn"),
-    Source("MKTNews", "flash", "https://api.mktnews.net/api/flash?type=0&limit=50", "https://mktnews.net/", "global", "json", "mktnews"),
+    Source("WSJ Markets", "markets", "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain", "https://www.wsj.com/", "us"),
+    Source("Financial Times", "markets", "https://www.ft.com/rss/home", "https://www.ft.com/"),
+    Source("Reuters · Google News 索引", "markets", "https://news.google.com/rss/search?q=site%3Areuters.com+%28markets+OR+economy+OR+oil+OR+bitcoin%29&hl=en-US&gl=US&ceid=US%3Aen", "https://www.reuters.com/", via="google_news", publisher_domain="reuters.com"),
+    Source("Bloomberg · Google News 索引", "markets", "https://news.google.com/rss/search?q=site%3Abloomberg.com+%28markets+OR+economy+OR+oil+OR+crypto%29&hl=en-US&gl=US&ceid=US%3Aen", "https://www.bloomberg.com/", via="google_news", publisher_domain="bloomberg.com"),
+    Source("Oilprice", "energy", "https://oilprice.com/rss/main", "https://oilprice.com/"),
+    Source("BEA Economic Releases", "macro", "https://apps.bea.gov/rss/rss.xml", "https://www.bea.gov/", "us"),
 ]
+ACTIVE_SOURCE_NAMES = frozenset(s.name for s in SOURCES)
 MARKET_KEYWORDS = (*MARKET_KEYWORDS, "比特币", "以太坊", "原油", "美联储", "利率", "通胀", "关税", "伊朗", "非农")
 
 POLL_INTERVAL_SECONDS = max(5, int(os.getenv("MARKET_STREAM_POLL_INTERVAL_SECONDS", "5")))
