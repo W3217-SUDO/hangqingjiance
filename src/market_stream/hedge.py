@@ -11,11 +11,11 @@ from fastapi.responses import FileResponse
 from .config import SOURCES, ACTIVE_SOURCE_NAMES
 from .fetcher import SOURCE_HEALTH
 from .relevance import analyze, select_assets
-from .translation import translate_text_to_chinese, contains_cjk
+from .translation import TranslationUnavailable, translate_text_to_chinese, contains_cjk
 
 ASSETS = ["US30", "US500", "BTC", "ETH", "XBR", "XTI"]
 STATIC = Path(__file__).parent / "static"
-TRANSLATIONS = asyncio.Semaphore(3)
+TRANSLATIONS = asyncio.Semaphore(1)
 
 
 def relevant(item):
@@ -123,8 +123,11 @@ def create_router(service):
         title, translated = row["title"], row["title_zh"]
         if contains_cjk(title): return {"title":title,"status":"original_zh"}
         if translated and translated != title and contains_cjk(translated): return {"title":translated,"status":"translated"}
-        async with TRANSLATIONS:
-            translated = await asyncio.to_thread(translate_text_to_chinese, title[:450])
+        try:
+            async with TRANSLATIONS:
+                translated = await asyncio.to_thread(translate_text_to_chinese, title[:450])
+        except TranslationUnavailable as exc:
+            return {"title":title,"status":"unavailable","reason":str(exc)}
         if translated != title and contains_cjk(translated):
             with service._store._connect() as connection:
                 connection.execute("UPDATE alerts SET title_zh=? WHERE id=?", (translated,item_id))
